@@ -110,13 +110,16 @@ public final class CarbEntryEditViewController: UITableViewController {
             let absorptionTime = absorptionTime ?? defaultAbsorptionTimes?.medium
         {
             if let o = originalCarbEntry, o.quantity == quantity && o.startDate == date && o.foodType == foodType && o.absorptionTime == absorptionTime {
-                if ((proteinQuantity == 0) && (fatQuantity == 0)) {
-                    return nil  // No changes were made
-                }
+                // if ((proteinQuantity == 0) && (fatQuantity == 0)) {
+                //     return nil  // No changes were made
+                // }
+                return nil  // No changes were made
             }
             
             /// See https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2901033/
             
+            //let FPCaloriesRatio = 100.0
+            //let onsetDelay = 60.0
             let proteinCalories = proteinQuantity! * 4
             let fatCalories = fatQuantity! * 9
             var lowCarbMultiplier: Double = Double(carbQuantity!)
@@ -127,13 +130,6 @@ public final class CarbEntryEditViewController: UITableViewController {
             // This is based on medical paper data that extra insulin is
             // most important for high-carb meals.
      
-            /*
-            if carbQuantity! >= 40 {
-                lowCarbMultiplier = 1.0
-            } else {
-                lowCarbMultiplier = (carbQuantity! / 80.0) + 0.5
-            }
-            */ // This is experimental so comment out for now pending more discussion.
             lowCarbMultiplier = 1.0
             
      
@@ -141,17 +137,12 @@ public final class CarbEntryEditViewController: UITableViewController {
      
             let carbEquivilant = FPU * 10 * lowCarbMultiplier
      
-                    /*The first two hours is to generalize the research-paper equation. But then add 3 more hours to the Loop absorption time to better mimic the effect of the duration of a pump square-wave (because the insulin will still have significant effect for about three hours after the square-wave ends). This does not need to be exact because individuals will tune it to their personal response using the FPU-Ratio setting. Finally, multiply by 0.6667 as the inverse of the 1.5x scaler that Loop applies to inputted durations. */
+                    /*The first two hours is to generalize the research-paper equation. But then add 3 more hours to the Loop absorption time to better mimic the effect of the duration of a pump square-wave (because the insulin will still have significant effect for about three hours after the square-wave ends). This does not need to be exact because individuals will tune it to their personal response using the FPU-Ratio setting.*/
             
-            var squareWaveDuration = (2.0 + FPU + 3.0) * 0.6667
+            var squareWaveDuration = 2.0 + FPU + 3.0
      
             if squareWaveDuration > 16 { // Set some reasonable max.
                 squareWaveDuration = 16
-            }
-            if squareWaveDuration < 4 { // Ewa told me never less than 4 hours for manual pump.
-                squareWaveDuration = 4  // But since this is carb-absorption, have to add ~3. But then
-                                        // Multiply by 0.667 to invert the Loop 1.5x factor. About 4.5,
-                                        // but round back down to 4 (and Loop will make that 6).
             }
      
             if carbEquivilant >= 1 {
@@ -256,7 +247,7 @@ public final class CarbEntryEditViewController: UITableViewController {
             let cell = tableView.dequeueReusableCell(withIdentifier: DateAndDurationTableViewCell.className) as! DateAndDurationTableViewCell
 
             cell.titleLabel.text = LocalizedString("Date", comment: "Title of the carb entry date picker cell")
-            cell.datePicker.isEnabled = isSampleEditable
+            cell.datePicker.isEnabled = false//isSampleEditable
             cell.datePicker.datePickerMode = .dateAndTime
             cell.datePicker.maximumDate = Date(timeIntervalSinceNow: maximumDateFutureInterval)
             cell.datePicker.minuteInterval = 1
@@ -377,12 +368,11 @@ public final class CarbEntryEditViewController: UITableViewController {
         }
 
         // RSS - Allow one to save if protein or fat is entered, even if carb is 0.
-        // Have to check "quantity" for carb because it means original quantity exists.
-        guard let quantity = quantity, let fq = fatQuantity, let pq = proteinQuantity, (quantity.doubleValue(for: HKUnit.gram()) > 0 || (fq > 0.0) || (pq > 0.0)) else {
+        guard let cq = carbQuantity, let fq = fatQuantity, let pq = proteinQuantity, ((cq > 0.1) || (fq > 0.0) || (pq > 0.0)) else {
             return false
         }
 
-        guard quantity.compare(maxQuantity) != .orderedDescending else {
+        guard quantity?.compare(maxQuantity) != .orderedDescending else {
             navigationDelegate.showMaxQuantityValidationWarning(for: self, maxQuantityGrams: maxQuantity.doubleValue(for: .gram()))
             return false
         }
