@@ -249,7 +249,7 @@ public final class CarbEntryEditViewController: UITableViewController {
             let cell = tableView.dequeueReusableCell(withIdentifier: DateAndDurationTableViewCell.className) as! DateAndDurationTableViewCell
 
             cell.titleLabel.text = LocalizedString("Date", comment: "Title of the carb entry date picker cell")
-            cell.datePicker.isEnabled = false//isSampleEditable
+            cell.datePicker.isEnabled = isSampleEditable
             cell.datePicker.datePickerMode = .dateAndTime
             cell.datePicker.maximumDate = Date(timeIntervalSinceNow: maximumDateFutureInterval)
             cell.datePicker.minuteInterval = 1
@@ -371,12 +371,13 @@ public final class CarbEntryEditViewController: UITableViewController {
             return false
         }
 
-        // RSS - Allow one to save if protein or fat is entered, even if carb is 0.
-        guard let cq = carbQuantity, let fq = fatQuantity, let pq = proteinQuantity, ((cq > 0.1) || (fq > 0.0) || (pq > 0.0)) else {
-            return false
-        }
+        guard let quantity = quantity, quantity.doubleValue(for: HKUnit.gram()) > 0 else { return false }
+        // // RSS - Allow one to save if protein or fat is entered, even if carb is 0.
+        // guard let cq = carbQuantity, let fq = fatQuantity, let pq = proteinQuantity, ((cq > 0.1) || (fq > 0.0) || (pq > 0.0)) else {
+        //     return false
+        // }
 
-        guard quantity?.compare(maxQuantity) != .orderedDescending else {
+        guard quantity.compare(maxQuantity) != .orderedDescending else {
             navigationDelegate.showMaxQuantityValidationWarning(for: self, maxQuantityGrams: maxQuantity.doubleValue(for: .gram()))
             return false
         }
