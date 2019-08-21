@@ -208,7 +208,7 @@ public final class CarbEntryEditViewController: UITableViewController {
     public override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         switch Row(rawValue: indexPath.row)! {
         case .value:
-            let cell = tableView.dequeueReusableCell(withIdentifier: CarbDecimalTextFieldTableViewCell.className) as! CarbDecimalTextFieldTableViewCell
+            let cell = tableView.dequeueReusableCell(withIdentifier: DecimalTextFieldTableViewCell.className) as! DecimalTextFieldTableViewCell
 
             if let quantity = quantity {
                 cell.number = NSNumber(value: quantity.doubleValue(for: preferredUnit))
@@ -399,7 +399,7 @@ extension CarbEntryEditViewController: TextFieldTableViewCellDelegate {
 
         switch Row(rawValue: row) {
         case .value?:
-            if let cell = cell as? CarbDecimalTextFieldTableViewCell, let number = cell.number {
+            if let cell = cell as? DecimalTextFieldTableViewCell, let number = cell.number {
                 carbQuantity = Double(number.doubleValue)
                 quantity = HKQuantity(unit: preferredUnit, doubleValue: number.doubleValue)
             } else {

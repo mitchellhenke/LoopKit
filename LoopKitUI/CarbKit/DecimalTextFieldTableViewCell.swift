@@ -8,7 +8,7 @@
 
 import UIKit
 
-class CarbDecimalTextFieldTableViewCell: TextFieldTableViewCell {
+class DecimalTextFieldTableViewCell: TextFieldTableViewCell {
 
     @IBOutlet weak var titleLabel: UILabel!
     
