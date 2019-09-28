@@ -29,10 +29,14 @@ public final class CarbEntryEditViewController: UITableViewController {
 
     public var maxQuantity = HKQuantity(unit: .gram(), doubleValue: 250)
 
+    public var FPCaloriesRatio: Double = 0.0
+
+    public var onsetDelay: Double = 0.0
+
     /// Entry configuration values. Must be set before presenting.
     public var absorptionTimePickerInterval = TimeInterval(minutes: 30)
 
-    public var maxAbsorptionTime = TimeInterval(hours: 8)
+    public var maxAbsorptionTime = TimeInterval(hours: 16)
 
     public var maximumDateFutureInterval = TimeInterval(hours: 4)
 
@@ -54,6 +58,14 @@ public final class CarbEntryEditViewController: UITableViewController {
 
     fileprivate var quantity: HKQuantity?
 
+    fileprivate var carbQuantity: Double? = 0.0
+
+    fileprivate var fatQuantity: Double? = 0.0
+
+    fileprivate var proteinQuantity: Double? = 0.0
+
+    fileprivate var FPUQuantity: HKQuantity?
+
     fileprivate var date = Date()
 
     fileprivate var foodType: String?
@@ -70,19 +82,83 @@ public final class CarbEntryEditViewController: UITableViewController {
 
     public var updatedCarbEntry: NewCarbEntry? {
         if  let quantity = quantity,
+            var absorptionTime = absorptionTime ?? defaultAbsorptionTimes?.medium
+        {
+            if let o = originalCarbEntry, o.quantity == quantity && o.startDate == date && o.foodType == foodType && o.absorptionTime == absorptionTime {
+                return nil  // No changes were made
+            }
+
+            if ((proteinQuantity! > 0.0) || (fatQuantity! > 0.0)) { // RSS - If fat and protein were entered, then carbs are always fast.
+                return NewCarbEntry(
+                    quantity: quantity,
+                    startDate: date,
+                    foodType: foodType,
+                    absorptionTime: 7200,
+                    externalID: originalCarbEntry?.externalID
+                )
+            } else {
+                return NewCarbEntry(
+                    quantity: quantity,
+                    startDate: date,
+                    foodType: foodType,
+                    absorptionTime: absorptionTime,
+                    externalID: originalCarbEntry?.externalID
+                )
+            }
+        } else {
+            return nil
+        }
+    }
+
+     public var updatedFPCarbEntry: NewCarbEntry? {
+        if  let quantity = quantity,
             let absorptionTime = absorptionTime ?? defaultAbsorptionTimes?.medium
         {
             if let o = originalCarbEntry, o.quantity == quantity && o.startDate == date && o.foodType == foodType && o.absorptionTime == absorptionTime {
                 return nil  // No changes were made
             }
-            
-            return NewCarbEntry(
-                quantity: quantity,
-                startDate: date,
-                foodType: foodType,
-                absorptionTime: absorptionTime,
-                externalID: originalCarbEntry?.externalID
-            )
+
+            /// See https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2901033/
+
+            //let FPCaloriesRatio = 100.0
+            //let onsetDelay = 60.0
+            let proteinCalories = proteinQuantity! * 4
+            let fatCalories = fatQuantity! * 9
+            var lowCarbMultiplier: Double = Double(carbQuantity!)
+
+            // If carbs are 40 or more, then fat and protein are full weught.
+            // If carbs are 0, then fat and protein are 50% weight.
+            // If carbs are 20, then fat and protein are 75% weight.
+            // This is based on medical paper data that extra insulin is
+            // most important for high-carb meals.
+
+            lowCarbMultiplier = 1.0
+
+
+            let FPU = Double(proteinCalories + fatCalories) / Double(FPCaloriesRatio)
+
+            let carbEquivilant = FPU * 10 * lowCarbMultiplier
+
+                    /*The first two hours is to generalize the research-paper equation. But then add 3 more hours to the Loop absorption time to better mimic the effect of the duration of a pump square-wave (because the insulin will still have significant effect for about three hours after the square-wave ends). This does not need to be exact because individuals will tune it to their personal response using the FPU-Ratio setting.*/
+
+            var squareWaveDuration = 2.0 + FPU + 3.0
+
+            if squareWaveDuration > 16 { // Set some reasonable max.
+                squareWaveDuration = 16
+            }
+
+            if carbEquivilant >= 1 {
+                return NewCarbEntry(
+                    quantity: HKQuantity(unit: .gram(), doubleValue: carbEquivilant),
+                    startDate: date + 60 * onsetDelay,
+                    foodType: foodType,
+                    absorptionTime: .hours(squareWaveDuration),
+                    externalID: originalCarbEntry?.externalID)
+            } else {
+
+                return nil
+            }
+
         } else {
             return nil
         }
@@ -123,11 +199,13 @@ public final class CarbEntryEditViewController: UITableViewController {
 
     fileprivate enum Row: Int {
         case value
+        case fat
+        case protein
         case date
         case foodType
         case absorptionTime
 
-        static let count = 4
+        static let count = 6
     }
 
     public override func numberOfSections(in tableView: UITableView) -> Int {
@@ -148,6 +226,26 @@ public final class CarbEntryEditViewController: UITableViewController {
             }
             cell.textField.isEnabled = isSampleEditable
             cell.unitLabel?.text = String(describing: preferredUnit)
+            cell.delegate = self
+
+            return cell
+        case .fat:
+            let cell = tableView.dequeueReusableCell(withIdentifier: FatDecimalTextFieldTableViewCell.className) as! FatDecimalTextFieldTableViewCell
+
+            cell.number = nil // Has to be nil or else the field will open with an actual 0 in it rather than empty with a virtual 0.
+            cell.textField.isEnabled = isSampleEditable
+            cell.unitLabel?.text = String(describing: preferredUnit)
+
+            cell.delegate = self
+
+            return cell
+        case .protein:
+            let cell = tableView.dequeueReusableCell(withIdentifier: ProteinDecimalTextFieldTableViewCell.className) as! ProteinDecimalTextFieldTableViewCell
+
+            cell.number = nil // Has to be nil or else the field will open with an actual 0 in it rather than empty with a virtual 0.
+            cell.textField.isEnabled = isSampleEditable
+            cell.unitLabel?.text = String(describing: preferredUnit)
+
             cell.delegate = self
 
             return cell
@@ -212,7 +310,7 @@ public final class CarbEntryEditViewController: UITableViewController {
 
     public override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         switch Row(rawValue: indexPath.row)! {
-        case .value, .date:
+        case .value, .date, .fat, .protein:
             break
         case .foodType:
             if usesCustomFoodType, shouldBeginEditingFoodType, let cell = cell as? TextFieldTableViewCell {
@@ -225,7 +323,7 @@ public final class CarbEntryEditViewController: UITableViewController {
     }
 
     public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        return LocalizedString("Choose a longer absorption time for larger meals, or those containing fats and proteins. This is only guidance to the algorithm and need not be exact.", comment: "Carb entry section footer text explaining absorption time")
+        return LocalizedString("Optional Fat and protein entry will result in additional dosing over an extended duration for fat and protein calories, and will override manual entry of duration of absorption.", comment: "Carb entry section footer text explaining absorption time")
     }
 
     // MARK: - UITableViewDelegate
@@ -311,9 +409,25 @@ extension CarbEntryEditViewController: TextFieldTableViewCellDelegate {
         switch Row(rawValue: row) {
         case .value?:
             if let cell = cell as? DecimalTextFieldTableViewCell, let number = cell.number {
+                carbQuantity = Double(number.doubleValue)
                 quantity = HKQuantity(unit: preferredUnit, doubleValue: number.doubleValue)
             } else {
                 quantity = nil
+                quantity = HKQuantity(unit: preferredUnit, doubleValue: 0.1)
+                // 0.1 to leave a marker for when you ate in HealthKit, Loop, and Nightscout.
+                carbQuantity = 0.1
+            }
+        case .fat?:
+            if let cell = cell as? FatDecimalTextFieldTableViewCell, let number = cell.number {
+                fatQuantity = Double(number.doubleValue)
+            } else {
+                fatQuantity = 0.0
+            }
+        case .protein?:
+            if let cell = cell as? ProteinDecimalTextFieldTableViewCell, let number = cell.number {
+                proteinQuantity = Double(number.doubleValue)
+            } else {
+                proteinQuantity = 0.0
             }
         case .foodType?:
             foodType = cell.textField.text
