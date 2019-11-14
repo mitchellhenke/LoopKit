@@ -17,6 +17,14 @@ public enum CarbStoreResult<T> {
     case failure(CarbStore.CarbStoreError)
 }
 
+public enum CarbAbsorptionModel {
+    case linear
+    case nonlinear
+    case adaptiveRateNonlinear
+        
+    static var settings = CarbModelSettings(absorptionModel: LinearAbsorption(), initialAbsorptionTimeOverrun: 1.5, adaptiveAbsorptionRateEnabled: false)
+}
+
 public protocol CarbStoreDelegate: class {
 
     /// Informs the delegate that an internal error occurred
@@ -47,12 +55,6 @@ public protocol CarbStoreSyncDelegate: class {
     func carbStore(_ carbStore: CarbStore, hasDeletedEntries entries: [DeletedCarbEntry], completion: @escaping (_ entries: [DeletedCarbEntry]) -> Void)
 }
 
-extension NSNotification.Name {
-    /// Notification posted when carb entries were changed, either via add/replace/delete methods or from HealthKit
-    public static let CarbEntriesDidUpdate = NSNotification.Name(rawValue: "com.loudnate.CarbKit.CarbEntriesDidUpdateNotification")
-}
-
-
 /**
  Manages storage, retrieval, and calculation of carbohydrate data.
 
@@ -70,6 +72,10 @@ extension NSNotification.Name {
  ```
  */
 public final class CarbStore: HealthKitSampleStore {
+    
+    /// Notification posted when carb entries were changed, either via add/replace/delete methods or from HealthKit
+    public static let carbEntriesDidUpdate = NSNotification.Name(rawValue: "com.loudnate.CarbKit.carbEntriesDidUpdate")
+
     public typealias DefaultAbsorptionTimes = (fast: TimeInterval, medium: TimeInterval, slow: TimeInterval)
 
     public static let defaultAbsorptionTimes: DefaultAbsorptionTimes = (fast: TimeInterval(hours: 2), medium: TimeInterval(hours: 3), slow: TimeInterval(hours: 4))
@@ -159,6 +165,9 @@ public final class CarbStore: HealthKitSampleStore {
 
     /// The factor by which the entered absorption time can be extended to accomodate slower-than-expected absorption
     public let absorptionTimeOverrun: Double
+    
+    /// Carb absorption model
+    public let carbAbsorptionModel: CarbAbsorptionModel
 
     /// The interval of carb data to keep in cache
     public let cacheLength: TimeInterval
@@ -194,7 +203,8 @@ public final class CarbStore: HealthKitSampleStore {
         syncVersion: Int = 1,
         absorptionTimeOverrun: Double = 1.5,
         calculationDelta: TimeInterval = 5 /* minutes */ * 60,
-        effectDelay: TimeInterval = 10 /* minutes */ * 60
+        effectDelay: TimeInterval = 10 /* minutes */ * 60,
+        carbAbsorptionModel: CarbAbsorptionModel = .nonlinear
     ) {
         self.cacheStore = cacheStore
         self.defaultAbsorptionTimes = defaultAbsorptionTimes
@@ -206,6 +216,7 @@ public final class CarbStore: HealthKitSampleStore {
         self.delta = calculationDelta
         self.delay = effectDelay
         self.cacheLength = max(cacheLength, defaultAbsorptionTimes.slow * 2)
+        self.carbAbsorptionModel = carbAbsorptionModel
 
         super.init(healthStore: healthStore, type: carbType, observationStart: Date(timeIntervalSinceNow: -cacheLength), observationEnabled: observationEnabled)
 
@@ -229,6 +240,16 @@ public final class CarbStore: HealthKitSampleStore {
             }
 
             UserDefaults.standard.purgeLegacyCarbEntryKeys()
+            
+            // Carb model settings based on the selected absorption model
+            switch self.carbAbsorptionModel {
+            case .linear:
+                CarbAbsorptionModel.settings = CarbModelSettings(absorptionModel: LinearAbsorption(), initialAbsorptionTimeOverrun: absorptionTimeOverrun, adaptiveAbsorptionRateEnabled: false)
+            case .nonlinear:
+                CarbAbsorptionModel.settings = CarbModelSettings(absorptionModel: PiecewiseLinearAbsorption(), initialAbsorptionTimeOverrun: absorptionTimeOverrun, adaptiveAbsorptionRateEnabled: false)
+            case .adaptiveRateNonlinear:
+                CarbAbsorptionModel.settings = CarbModelSettings(absorptionModel: PiecewiseLinearAbsorption(), initialAbsorptionTimeOverrun: 1.0, adaptiveAbsorptionRateEnabled: true, adaptiveRateStandbyIntervalFraction: 0.2)
+            }
 
             // TODO: Consider resetting uploadState.uploading
         }
@@ -268,7 +289,7 @@ public final class CarbStore: HealthKitSampleStore {
                 self.cacheStore.save()
                 self.syncExternalDB()
 
-                NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.queriedByHealthKit.rawValue])
+                NotificationCenter.default.post(name: CarbStore.carbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.queriedByHealthKit.rawValue])
             }
         }
     }
@@ -394,7 +415,7 @@ extension CarbStore {
                 if completed {
                     self.addCachedObject(for: stored)
                     completion(.success(stored))
-                    NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.changedInApp.rawValue])
+                    NotificationCenter.default.post(name: CarbStore.carbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.changedInApp.rawValue])
                     self.syncExternalDB()
                 } else if let error = error {
                     self.log.error("Error saving entry %@: %@", sample.uuid.uuidString, String(describing: error))
@@ -420,7 +441,7 @@ extension CarbStore {
                 if completed {
                     self.replaceCachedObject(for: oldEntry, with: stored)
                     completion(.success(stored))
-                    NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.changedInApp.rawValue])
+                    NotificationCenter.default.post(name: CarbStore.carbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.changedInApp.rawValue])
                     self.syncExternalDB()
                 } else if let error = error {
                     self.log.error("Error replacing entry %@: %@", oldEntry.sampleUUID.uuidString, String(describing: error))
@@ -444,7 +465,7 @@ extension CarbStore {
                 if success {
                     self.deleteCachedObject(for: entry)
                     completion(.success(true))
-                    NotificationCenter.default.post(name: .CarbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.changedInApp.rawValue])
+                    NotificationCenter.default.post(name: CarbStore.carbEntriesDidUpdate, object: self, userInfo: [CarbStore.notificationUpdateSourceKey: UpdateSource.changedInApp.rawValue])
                     self.syncExternalDB()
                 } else if let error = error {
                     self.log.error("Error deleting entry %@: %@", entry.sampleUUID.uuidString, String(describing: error))
@@ -894,6 +915,14 @@ extension CarbStore {
     /// - parameter completionHandler: A closure called once the report has been generated. The closure takes a single argument of the report string.
     public func generateDiagnosticReport(_ completionHandler: @escaping (_ report: String) -> Void) {
         queue.async {
+            
+            var carbAbsorptionModel: String
+            switch self.carbAbsorptionModel {
+            case .linear: carbAbsorptionModel = "Linear"
+            case .nonlinear: carbAbsorptionModel = "Nonlinear"
+            case .adaptiveRateNonlinear: carbAbsorptionModel = "Nonlinear with Adaptive Rate for Remaining Carbs"
+            }
+            
             var report: [String] = [
                 "## CarbStore",
                 "",
@@ -907,6 +936,8 @@ extension CarbStore {
                 "* delay: \(self.delay)",
                 "* delta: \(self.delta)",
                 "* absorptionTimeOverrun: \(self.absorptionTimeOverrun)",
+                "* carbAbsorptionModel: \(carbAbsorptionModel)",
+                "* Carb absorption model settings: \(CarbAbsorptionModel.settings)",
                 super.debugDescription,
                 "",
                 "cachedCarbEntries: [",
