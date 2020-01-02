@@ -9,7 +9,7 @@
 "D2S-2h-yH6.text" = "g";
 
 /* Class = "UILabel"; text = "Amount Consumed"; ObjectID = "K0S-my-3qL"; */
-"K0S-my-3qL.text" = "Amount Consumed";
+"K0S-my-3qL.text" = "Carbohydrates";
 
 /* Class = "UIButton"; normalTitle = "🍽"; ObjectID = "Mde-by-DTA"; */
 "Mde-by-DTA.normalTitle" = "🍽";
