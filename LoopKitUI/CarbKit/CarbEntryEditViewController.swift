@@ -54,6 +54,10 @@ public final class CarbEntryEditViewController: UITableViewController {
 
     fileprivate var quantity: HKQuantity?
 
+    fileprivate var quantityFat: HKQuantity?
+
+    fileprivate var quantityProtein: HKQuantity?
+
     fileprivate var date = Date()
 
     fileprivate var foodType: String?
@@ -81,7 +85,9 @@ public final class CarbEntryEditViewController: UITableViewController {
                 startDate: date,
                 foodType: foodType,
                 absorptionTime: absorptionTime,
-                externalID: originalCarbEntry?.externalID
+                externalID: originalCarbEntry?.externalID,
+                quantityFat: quantityFat,
+                quantityProtein: quantityProtein
             )
         } else {
             return nil

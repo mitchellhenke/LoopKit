@@ -14,6 +14,8 @@ public struct NewCarbEntry: CarbEntry, Equatable, RawRepresentable {
     public typealias RawValue = [String: Any]
 
     public let quantity: HKQuantity
+    public let quantityFat: HKQuantity?
+    public let quantityProtein: HKQuantity?
     public let startDate: Date
     public let foodType: String?
     public var absorptionTime: TimeInterval?
@@ -22,14 +24,43 @@ public struct NewCarbEntry: CarbEntry, Equatable, RawRepresentable {
     public let syncIdentifier: String?
     public let isUploaded: Bool
 
-    public init(quantity: HKQuantity, startDate: Date, foodType: String?, absorptionTime: TimeInterval?, isUploaded: Bool = false, externalID: String? = nil, syncIdentifier: String? = nil) {
-        self.quantity = quantity
+    public init(quantity: HKQuantity, startDate: Date, foodType: String?, absorptionTime: TimeInterval?, isUploaded: Bool = false, externalID: String? = nil, syncIdentifier: String? = nil, quantityFat: HKQuantity? = nil, quantityProtein: HKQuantity? = nil) {
+        self.quantityFat = quantityFat
+        self.quantityProtein = quantityProtein
         self.startDate = startDate
         self.foodType = foodType
         self.absorptionTime = absorptionTime
         self.isUploaded = isUploaded
         self.externalID = externalID
         self.syncIdentifier = syncIdentifier
+
+        if quantityFat != nil && quantityProtein != nil {
+            let caloriesFat = quantityFat!.doubleValue(for: .gram()) * 9
+            let caloriesProtein = quantityProtein!.doubleValue(for: .gram()) * 4
+
+            let fatProteinUnits = (caloriesFat + caloriesProtein) / 100
+            let carbEquivalentQuantity = fatProteinUnits * 10
+            let duration: Double
+            switch fatProteinUnits {
+            case 0..<1.0:
+                duration = 2.0
+            case 1.0..<2.0:
+                duration = 3.0
+            case 2.0..<3.0:
+                duration = 4.0
+
+            case 3.0..<4.0:
+                duration = 5.0
+            default:
+                duration = 8.0
+            }
+
+            self.absorptionTime = TimeInterval(hours: duration)
+            self.quantity = HKQuantity(unit: .gram(), doubleValue: carbEquivalentQuantity)
+        } else {
+            self.quantity = quantity
+        }
+
     }
 
     public init?(rawValue: RawValue) {
